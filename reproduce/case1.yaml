@@ -1,0 +1,20 @@
+cluster:
+  name: cluster1
+  project_name: escience.grnet.gr
+  image: Hadoop-2.5.2
+  disk_template: Standard
+  cluster_size: 3 
+  cpu_master: 4
+  ram_master: 4096
+  disk_master: 20
+  cpu_slave: 4
+  ram_slave: 4096
+  disk_slave: 20
+  replication_factor: 2
+  dfs_blocksize: 128
+
+actions:
+- start
+- stop
+- format
+- start
