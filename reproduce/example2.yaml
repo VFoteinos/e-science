@@ -1,0 +1,11 @@
+cluster:
+  cluster_id: 8
+
+actions:  
+- start
+- put (~/test.xml,/user/hduser/)
+- run_job
+- get (/user/hduser/test.xml,~/test2.xml)
+- stop
+- format
+- start

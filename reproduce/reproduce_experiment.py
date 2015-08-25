@@ -9,10 +9,6 @@ import os, sys
 import yaml
 
 def create_cluster(script):
-    #check if cluster already exists or create a new cluster
-    
-    if script["cluster"]["cluster_id"] is not None:
-        return
 
     create_cluster_command = ("orka create")
     
@@ -53,50 +49,74 @@ def create_cluster(script):
             create_cluster_command += (" --dfs_blocksize=" 
                                    + str(script["configuration"]["dfs_blocksize"]))
 
-    exit_status = os.system(create_cluster_command)
-    if exit_status != 0:
-        print 'Cluster (re-)creation failed with exit status %d' % exit_status
-        sys.exit(0)
+    print create_cluster_command
+#    exit_status = os.system(create_cluster_command)
+#    if exit_status != 0:
+#        print 'Cluster (re-)creation failed with exit status %d' % exit_status
+#        sys.exit(0)
+
+    # retrieve cluster id
+    with open('_tmp.txt', 'r') as f:
+        cluster_id = f.readline().strip().split(': ')[1]    
+
+    return cluster_id
 
 
-def enforce_actions(script):
-    
-    # read cluster id
-    if script["cluster"]["cluster_id"] is not None:
-        cluster_id = script["cluster"]["cluster_id"]
-    
+def enforce_actions(script, cluster_id):
+
     # Enforce actions
     for action in script["actions"]:
         if action == "start":
-            os.system("orka hadoop start " + str(cluster_id))
+            print ("orka hadoop start " + str(cluster_id))
+            #os.system("orka hadoop start " + str(cluster_id))
         if action == "stop":
-            os.system("orka hadoop stop " + str(cluster_id))
+            print ("orka hadoop stop " + str(cluster_id))
+            #os.system("orka hadoop stop " + str(cluster_id))
         if action == "format":
-            os.system("orka hadoop format " + str(cluster_id))
+            print ("orka hadoop format " + str(cluster_id))
+            #os.system("orka hadoop format " + str(cluster_id))
         if action == "run_job":
-            print "run job: not implemented yet"
+            run_job(script, cluster_id)
         if action.startswith("put"):
             params_string = action.strip('put')
             params = params_string.strip(' ()')
             action_params = params.split(',')
-            os.system("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
+            print ("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
+            #os.system("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
         if action.startswith("get"):
             params_string = action.strip('get')
             params = params_string.strip(' ()')
             action_params = params.split(',')
-            os.system("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
-        
+            print ("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
+            #os.system("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
+
+def run_job(script, cluster_id):
+    print "run job"
+    
+
+
+
 def main(argv):
 
     # load the experiment
     with open(argv[1], 'r') as f:
         script = yaml.load(f)
 
-    if script.get("cluster") is not None:
-        create_cluster(script)
+    # check if cluster info is given (this is mandatory)
+    if script.get("cluster") is None:
+        print "Cluster information is missing."
+        return
+    
+    # check if the cluster will be created (no cluster id is given)
+    # find the correct cluster id to be used later for actions
+    if script["cluster"].get("cluster_id") is None:
+        cluster_id = create_cluster(script)
+    else:
+        cluster_id = script["cluster"].get("cluster_id")
 
+    # proceed to the list of actions
     if script.get("actions") is not None:
-        enforce_actions(script)
+        enforce_actions(script, cluster_id)
 
 
 if __name__ == "__main__":

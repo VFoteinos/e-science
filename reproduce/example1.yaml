@@ -1,5 +1,4 @@
 cluster:
-  cluster_id: 7
   name: cluster1
   project_name: ansible.grnet.gr
   image: Hue-3.8.0
@@ -16,7 +15,7 @@ actions:
 - start
 - put (~/test.xml,/user/hduser/)
 - run_job
-- get (/user/hduser/test.xml, ~/test2.xml)
+- get (/user/hduser/test.xml,~/test2.xml)
 - stop
 - format
 - start
