@@ -7,6 +7,8 @@ Reproduces the experiment that is stored in a yaml file
 
 import os, sys
 import yaml
+import subprocess
+FNULL = open(os.devnull, 'w')
 
 def create_cluster(script):
 
@@ -49,51 +51,65 @@ def create_cluster(script):
             create_cluster_command += (" --dfs_blocksize=" 
                                    + str(script["configuration"]["dfs_blocksize"]))
 
-    print create_cluster_command
-#    exit_status = os.system(create_cluster_command)
-#    if exit_status != 0:
-#        print 'Cluster (re-)creation failed with exit status %d' % exit_status
-#        sys.exit(0)
+    # temp file to store cluster details
+    create_cluster_command += (" >_tmp.txt")
+    
+    #print create_cluster_command
+    exit_status = os.system(create_cluster_command)
+    if exit_status != 0:
+        print 'Cluster (re-)creation failed with exit status %d' % exit_status
+        sys.exit(0)
 
-    # retrieve cluster id
+    # retrieve cluster id and master IP
     with open('_tmp.txt', 'r') as f:
         cluster_id = f.readline().strip().split(': ')[1]    
+        master_IP = f.readline().strip().split(': ')[1]
 
-    return cluster_id
+    return cluster_id, master_IP
 
 
-def enforce_actions(script, cluster_id):
+def enforce_actions(script, cluster_id, master_IP):
 
     # Enforce actions
     for action in script["actions"]:
         if action == "start":
-            print ("orka hadoop start " + str(cluster_id))
-            #os.system("orka hadoop start " + str(cluster_id))
+            #print ("orka hadoop start " + str(cluster_id))
+            os.system("orka hadoop start " + str(cluster_id))
         if action == "stop":
-            print ("orka hadoop stop " + str(cluster_id))
-            #os.system("orka hadoop stop " + str(cluster_id))
+            #print ("orka hadoop stop " + str(cluster_id))
+            os.system("orka hadoop stop " + str(cluster_id))
         if action == "format":
-            print ("orka hadoop format " + str(cluster_id))
-            #os.system("orka hadoop format " + str(cluster_id))
-        if action == "run_job":
-            run_job(script, cluster_id)
+            #print ("orka hadoop format " + str(cluster_id))
+            os.system("orka hadoop format " + str(cluster_id))
+        if action.startswith("run_job"):
+            run_job(action, master_IP)
         if action.startswith("put"):
             params_string = action.strip('put')
             params = params_string.strip(' ()')
             action_params = params.split(',')
-            print ("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
-            #os.system("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
+            #print ("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
+            os.system("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
         if action.startswith("get"):
             params_string = action.strip('get')
             params = params_string.strip(' ()')
             action_params = params.split(',')
-            print ("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
-            #os.system("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
+            #print ("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
+            os.system("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
 
-def run_job(script, cluster_id):
-    print "run job"
+def run_job(action, master_IP):
     
+    # retrieve user and job
+    params_string = action.strip('run_job')
+    params = params_string.strip(' ()')
+    action_params = params.split(',')
+    user = action_params[0]
+    job = action_params[1].strip('\" ')
 
+    # ssh and run job
+    response = subprocess.call( "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no " 
+                                + user + "@" + master_IP + " \'" 
+                                + job + "\'"
+                                , stderr=FNULL, shell=True)
 
 
 def main(argv):
@@ -108,15 +124,16 @@ def main(argv):
         return
     
     # check if the cluster will be created (no cluster id is given)
-    # find the correct cluster id to be used later for actions
+    # find the correct cluster id / master IP to be used later for actions
     if script["cluster"].get("cluster_id") is None:
-        cluster_id = create_cluster(script)
+        cluster_id, master_IP = create_cluster(script)
     else:
         cluster_id = script["cluster"].get("cluster_id")
+        master_IP = script["cluster"].get("master_IP")
 
     # proceed to the list of actions
     if script.get("actions") is not None:
-        enforce_actions(script, cluster_id)
+        enforce_actions(script, cluster_id, master_IP)
 
 
 if __name__ == "__main__":

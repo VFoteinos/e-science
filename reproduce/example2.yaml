@@ -1,10 +1,11 @@
 cluster:
-  cluster_id: 8
+  cluster_id: 12
+  master_IP: 83.212.96.25
 
 actions:  
 - start
 - put (~/test.xml,/user/hduser/)
-- run_job
+- run_job (hduser, "/usr/local/hadoop/bin/hadoop jar /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar pi 2 10000")
 - get (/user/hduser/test.xml,~/test2.xml)
 - stop
 - format
