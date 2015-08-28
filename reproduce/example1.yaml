@@ -1,5 +1,5 @@
 cluster:
-  name: cluster4
+  name: cluster
   project_name: ansible.grnet.gr
   image: Hue-3.8.0
   disk_template: Standard
