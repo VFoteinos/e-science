@@ -6,6 +6,7 @@ import logging
 import random
 import string
 import re
+import subprocess
 from sys import argv, stdout, stderr
 from kamaki.clients import ClientError
 from kamaki.clients.pithos import PithosClient
@@ -276,19 +277,21 @@ class HadoopCluster(object):
         """ Method for taking node actions in a Hadoop cluster in~okeanos."""
         opt_addnode = self.opts.get('addnode', False)
         opt_deletenode = self.opts.get('deletenode', False)
-        clusters = get_user_clusters(self.opts['token'], self.opts['server_url'])
-        for cluster in clusters:
-            if (cluster['id'] == self.opts['cluster_id']) and cluster['cluster_status'] == const_cluster_status_active:
-                if self.opts['ram'] < cluster['ram_slaves']:
-                    logging.error('Ram should not be lower than the memory of the other slaves.')
-                    exit(error_fatal)
-                self.opts['name'] = '{0}-{1}'.format(cluster['cluster_name'], cluster['cluster_size']+1)
-                self.opts['project_name'] = cluster['project_name']
-                break
-        else:
-            logging.error('You can take node actions only in an active cluster.')
-            exit(error_fatal)
         if opt_addnode == True:
+
+            clusters = get_user_clusters(self.opts['token'], self.opts['server_url'])
+            for cluster in clusters:
+                if (cluster['id'] == self.opts['cluster_id']) and cluster['cluster_status'] == const_cluster_status_active:
+                    if self.opts['ram'] < cluster['ram_slaves']:
+                        logging.error('Ram should not be lower than the memory of the other slaves.')
+                        exit(error_fatal)
+                    self.opts['name'] = '{0}-{1}'.format(cluster['cluster_name'], cluster['cluster_size']+1)
+                    self.opts['project_name'] = cluster['project_name']
+                    break
+                else:
+                    logging.error('You can take node actions only in an active cluster.')
+                    exit(error_fatal)
+
             try:
                 payload = {"nodeserver":{"project_name": self.opts['project_name'], "server_name": self.opts['name'],
                                          "id": self.opts['cluster_id'], "cpu": self.opts['cpu'],
@@ -308,7 +311,47 @@ class HadoopCluster(object):
                 stderr.write('{0}'.format('\r'))
                 logging.error(str(e.args[0]))
                 exit(error_fatal)
-        # elif opt_deletenode == True:
+        elif opt_deletenode == True:
+            # to delete a node in a cluster
+
+            # retrieve the master IP
+            clusters = get_user_clusters(self.opts['token'], self.opts['server_url'])
+            active_cluster = None
+            for cluster in clusters:
+                if (cluster['id'] == self.opts['cluster_id']):
+                    if cluster['hadoop_status'] == const_hadoop_status_started:
+                        active_cluster = cluster
+                        break
+
+            # append the node's hostname to the exclude file
+            response = subprocess.call( "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "
+                                        + "root@" + active_cluster['master_IP'] + " \'" 
+                                        + "echo " + "\'" + self.opts['hostname'] + "\'" 
+                                        + " >> /usr/local/hadoop/etc/hadoop/exclude"
+                                        + "\'", stderr=FNULL, shell=True)
+
+            response = subprocess.call( "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "
+                                        + "root@" + active_cluster['master_IP'] + " \'" 
+                                        + "chown hduser:hadoop /usr/local/hadoop/etc/hadoop/exclude"
+                                        + "\'", stderr=FNULL, shell=True)
+
+            # update the hdfs-site.xml
+            response = subprocess.call( "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "
+                                        + "root@" + active_cluster['master_IP'] + " \'" 
+                                        + "sed -i \"41i  <property><name>dfs.hosts.exclude</name><value>/usr/local/hadoop/etc/hadoop/exclude</value><description> List of nodes to decommission </description></property>\" /usr/local/hadoop/etc/hadoop/hdfs-site.xml"
+                                        + "\'", stderr=FNULL, shell=True)
+
+            # update the mapred-site.xml
+            response = subprocess.call( "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "
+                                        + "root@" + active_cluster['master_IP'] + " \'" 
+                                        + "sed -i \"35i  <property><name>mapred.hosts.exclude</name><value>/usr/local/hadoop/etc/hadoop/exclude</value><description> List of nodes to decommission </description></property>\" /usr/local/hadoop/etc/hadoop/mapred-site.xml"
+                                        + "\'", stderr=FNULL, shell=True)
+
+            # refresh nodes
+            response = subprocess.call( "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "
+                                        + "hduser@" + active_cluster['master_IP'] + " \'" 
+                                        + "hadoop dfsadmin -refreshNodes"
+                                        + "\'", stderr=FNULL, shell=True)
 
     def hadoop_action(self):
         """ Method for applying an action to a Hadoop cluster"""
@@ -921,6 +964,10 @@ def main():
         # hidden argument with default value so we can set opts['deletenode'] 
         # when ANY 'orka node delete' command is invoked
         parser_deletenode.add_argument('--foo', nargs="?", help=SUPPRESS, default=True, dest='deletenode')
+        parser_deletenode.add_argument('cluster_id', help='The id of the Hadoop cluster',
+                                   type=checker.positive_num_is)
+        parser_deletenode.add_argument("hostname", help='The hostname of the node to be deleted',
+                                       type=checker.a_string_is)     
      
         parser_list.add_argument('--status', help='Filter by status ({%(choices)s})'
                               ' Default is all: no filtering.', type=str.upper,
