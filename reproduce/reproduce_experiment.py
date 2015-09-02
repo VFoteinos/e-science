@@ -55,7 +55,8 @@ def create_cluster(script):
     # temp file to store cluster details
     create_cluster_command += (" >_tmp.txt")
  
-    # create cluster   
+    # create cluster
+    print create_cluster_command
     exit_status = os.system(create_cluster_command)
     if exit_status != 0:
         print 'Cluster (re-)creation failed with exit status %d' % exit_status
@@ -68,18 +69,26 @@ def create_cluster(script):
         root_pass = f.readline().strip().split(': ')[1]
 
     # copy ssh keys to master
-#    copy_ssh_keys(master_IP, root_pass)
+    copy_ssh_keys(master_IP, root_pass)
     
     return cluster_id, master_IP
 
 
 def copy_ssh_keys(master_IP, root_pass):
 
+    response = subprocess.call( "ssh-keygen -R " + master_IP, stderr=FNULL, shell=True)
+    response = subprocess.call( "ssh-keyscan -H " + master_IP + " ~/.ssh/known_hosts", stderr=FNULL, shell=True)
+
+    print ("cat ~/.ssh/id_rsa.pub | sshpass -p " + root_pass 
+                                + " ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@" + 
+                                master_IP + " \'" + "cat >> ~/.ssh/authorized_keys" + "\'")
     response = subprocess.call( "cat ~/.ssh/id_rsa.pub | sshpass -p " + root_pass 
-                                + " ssh -o StrictHostKeyChecking=no root@" + 
+                                + " ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@" + 
                                 master_IP + " \'" + "cat >> ~/.ssh/authorized_keys" + "\'"
                                 , stderr=FNULL, shell=True)
 
+    print ("sshpass -p " + root_pass + " ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no " 
+                                + "root@" + master_IP + " \'" + "cp ~/.ssh/authorized_keys /home/hduser/.ssh/authorized_keys" + "\'")
     response = subprocess.call( "sshpass -p " + root_pass + " ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no " 
                                 + "root@" + master_IP + " \'" + "cp ~/.ssh/authorized_keys /home/hduser/.ssh/authorized_keys" + "\'"
                                 , stderr=FNULL, shell=True)
@@ -90,16 +99,19 @@ def enforce_actions(script, cluster_id, master_IP):
     # Enforce actions
     for action in script["actions"]:
         if action in ["start", "stop", "format"]:
+            print ("orka hadoop " + action + " " + str(cluster_id))
             os.system("orka hadoop " + action + " " + str(cluster_id))
         if action.startswith("put"):
             params_string = action.strip('put')
             params = params_string.strip(' ()')
             action_params = params.split(',')
+            print ("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
             os.system("orka file put " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
         if action.startswith("get"):
             params_string = action.strip('get')
             params = params_string.strip(' ()')
             action_params = params.split(',')
+            print ("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
             os.system("orka file get " + str(cluster_id) + " " + action_params[0] + " " + action_params[1])
         if action.startswith("run_job"):
             run_job(action, master_IP)
@@ -114,6 +126,9 @@ def run_job(action, master_IP):
     job = action_params[1].strip('\" ')
 
     # ssh and run job
+    print ("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no " 
+                                + user + "@" + master_IP + " \'" 
+                                + job + "\'")
     response = subprocess.call( "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no " 
                                 + user + "@" + master_IP + " \'" 
                                 + job + "\'"
