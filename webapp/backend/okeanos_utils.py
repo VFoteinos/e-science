@@ -13,6 +13,7 @@ from kamaki.clients import ClientError
 from kamaki.clients.image import ImageClient
 from kamaki.clients.astakos import AstakosClient
 from kamaki.clients.cyclades import CycladesClient, CycladesNetworkClient
+from kamaki.clients.storage import StorageClient
 from time import sleep
 from cluster_errors_constants import *
 from celery import current_task
@@ -519,6 +520,15 @@ def init_cyclades(endpoint, token):
     except ClientError:
         msg = ' Failed to initialize cyclades client'
         raise ClientError(msg)
+    
+    
+def init_storage(endpoint, token):
+    logging.log(REPORT, ' Initialize storage client')
+    try:
+        return StorageClient(endpoint, token)
+    except ClientError:
+        msg = 'Failed to initialize storage client'
+        raise ClientError(msg)
 
   
 def get_float_network_id(cyclades_network_client, project_id):
@@ -799,3 +809,27 @@ def get_remote_server_file_size(url, user='', password=''):
                                 " | grep -i content-length | awk \'{print $2}\' | tr -d '\r\n'", shell=True)
 
     return int(r)
+
+
+def save_metadata(token, cluster_id):
+    auth = check_credentials(unmask_token(encrypt_key,token))
+    endpoints, user_id = endpoints_and_user_id(auth)
+    storage = init_storage(endpoints['pithos'], unmask_token(encrypt_key,token))
+    cluster = ClusterInfo.objects.get(id=cluster_id)
+    uuid = get_user_id(unmask_token(encrypt_key,token))
+         
+    try:
+        file_ = open('exp1.yaml', 'w')
+        file_.write("reproducing experiment...")  
+        file_.close()
+
+        r = subprocess.call("curl -X PUT -D - --http1.0 -H \"X-Auth-Token: " + 
+                            unmask_token(encrypt_key,token) + 
+                            "\" -H \"Content-Type: text/plain\" -T exp1.yaml https://pithos.okeanos.grnet.gr/v1/"
+                            + uuid + "/pithos/exp1.yaml", shell=True)
+
+    except ClientError:
+        msg = ' Could not upload metadata.'
+        raise ClientError(msg, error_upload_metadata)
+    #result = {"cluster_size":cluster.cluster_size, "master_IP":cluster.master_IP}
+    return upload_metadata

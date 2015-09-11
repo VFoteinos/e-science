@@ -24,7 +24,8 @@ from serializers import OkeanosTokenSerializer, UserInfoSerializer, \
 from django_db_after_login import *
 from cluster_errors_constants import *
 from tasks import create_cluster_async, destroy_cluster_async, scale_cluster_async, \
-    hadoop_cluster_action_async, put_hdfs_async, create_server_async, destroy_server_async
+    hadoop_cluster_action_async, put_hdfs_async, create_server_async, destroy_server_async, \
+    save_metadata_async
 from create_cluster import YarnCluster
 from celery.result import AsyncResult
 from reroute_ssh import HdfsRequest
@@ -217,11 +218,19 @@ class StatusView(APIView):
                 except Exception, e:
                     return Response({"status": str(e.args[0])})
             # Update existing cluster
-            if serializer.data['cluster_edit']:
+            if serializer.data['cluster_edit'] and serializer.data['cluster_size']:
                 cluster = ClusterInfo.objects.get(id=serializer.data['cluster_edit'])
                 cluster_delta = serializer.data['cluster_size']-cluster.cluster_size
                 try:
                     cluster_action = scale_cluster_async.delay(user.okeanos_token, serializer.data['cluster_edit'], cluster_delta)
+                    task_id = cluster_action.id
+                    return Response({"id":1, "task_id": task_id}, status=status.HTTP_202_ACCEPTED)
+                except Exception, e:
+                    return Response({"status": str(e.args[0])})
+            # Get metadata and send them to pithos
+            if serializer.data['cluster_edit']:
+                try:
+                    cluster_action = save_metadata_async.delay(user.okeanos_token, serializer.data['cluster_edit'])
                     task_id = cluster_action.id
                     return Response({"id":1, "task_id": task_id}, status=status.HTTP_202_ACCEPTED)
                 except Exception, e:
@@ -326,6 +335,38 @@ class SessionView(APIView):
         else:
             return Response(serializer.errors,
                             status=status.HTTP_400_BAD_REQUEST)
+            
+class NodeServerView(APIView):
+    """
+    View to handle requests for adding or deleting a node server.
+    """
+    authentication_classes = (EscienceTokenAuthentication, )
+    permission_classes = (IsAuthenticated, )
+    resource_name = 'nodeserver'
+    serializer_class = ClusterchoicesSerializer
+    
+    def post(self, request, *args, **kwargs):
+        """
+        Handles requests for adding a node.
+        """
+        serializer = self.serializer_class(data=request.DATA)
+        if serializer.is_valid():
+            user_token = Token.objects.get(key=request.auth)
+            user = UserInfo.objects.get(user_id=user_token.user.user_id)
+
+            # Dictionary of VreServer arguments
+            choices = dict()
+            choices = serializer.data.copy()
+            choices.update({'token': user.okeanos_token, "cpu_slaves": 0,"ram_slaves": 0,
+                            "disk_slaves": 0,"cpu_master": choices['cpu'],"ram_master": choices['ram'],
+                            "disk_master": choices['disk']})
+            c_server = create_server_async.delay(choices)
+            task_id = c_server.id
+            return Response({"id":1, "task_id": task_id}, status=status.HTTP_202_ACCEPTED)
+
+        # This will be send if user's parameters are not de-serialized
+        # correctly.
+        return Response(serializer.errors)
             
 class VreServerView(APIView):
     """
